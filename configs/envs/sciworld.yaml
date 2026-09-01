@@ -1,0 +1,9 @@
+name: sciworld
+split: test
+
+max_steps: 40
+history_length: 50
+include_admissible_actions: true
+
+part_num: 1
+part_idx: -1
