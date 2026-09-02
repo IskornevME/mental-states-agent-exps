@@ -138,9 +138,13 @@ def _run_episode(
     benchmark: str,
     split: str,
     attempt_id: int,
+    experiment_name: str,
 ) -> Dict[str, Any]:
     """Run one pure actor -> environment trajectory."""
     _, state = env.reset()
+
+    initial_observation = env.get_current_observation()
+    task_text = env.get_task_text()
 
     step_records = []
 
@@ -192,11 +196,17 @@ def _run_episode(
         )
 
     return {
+        "experiment_name": experiment_name,
         "benchmark": benchmark,
         "split": split,
         "task_id": task.task_id,
         "attempt_id": attempt_id,
+        "task_text": task_text,
+        "initial_observation": initial_observation,
         "success": state.success,
+        # Environment-level episode reward after executing this action.
+        # For ScienceWorld this follows the current QLASS behavior and is the best raw_score observed so far,
+        # not the immediate reward delta.
         "reward": state.reward,
         "num_steps": state.steps,
         "terminate_reason": state.terminate_reason,
@@ -250,6 +260,19 @@ def main() -> None:
     )
 
     parser.add_argument(
+        "--model-name",
+        default=None,
+        help="Optional model-name/path override for the actor config.",
+    )
+
+    parser.add_argument(
+        "--num-trajectories",
+        type=int,
+        default=None,
+        help="Optional number of independent trajectories per task.",
+    )
+
+    parser.add_argument(
         "--overwrite",
         action="store_true",
         help="Overwrite an existing trajectories.jsonl.",
@@ -291,6 +314,8 @@ def main() -> None:
 
     if args.server_address:
         agent_config["server_address"] = args.server_address
+    if args.model_name:
+        agent_config["model_name"] = args.model_name
 
     # ------------------------------------------------------------------
     # Dataset/run settings.
@@ -312,12 +337,13 @@ def main() -> None:
         if max_tasks <= 0:
             raise ValueError("max_tasks must be positive")
 
-    num_trajectories = int(experiment_config.get("num_trajectories", 1))
+    num_trajectories = int(
+        args.num_trajectories
+        if args.num_trajectories is not None else experiment_config.get("num_trajectories", 1)
+    )
 
     if num_trajectories <= 0:
-        raise ValueError(
-            "num_trajectories must be positive"
-        )
+        raise ValueError("num_trajectories must be positive")
 
     # ------------------------------------------------------------------
     # Output
@@ -360,6 +386,10 @@ def main() -> None:
     processed_tasks = 0
     total_episodes = 0
 
+    run_metadata = {
+        "status": "running",
+    }
+
     try:
         # --------------------------------------------------------------
         # Benchmark-agnostic actor-only loop.
@@ -386,6 +416,7 @@ def main() -> None:
                     benchmark=benchmark,
                     split=split,
                     attempt_id=attempt_id,
+                    experiment_name=str(experiment_config["name"]),
                 )
 
                 _append_jsonl(trajectories_path, trajectory)
@@ -397,9 +428,24 @@ def main() -> None:
                     task.task_id, attempt_id, trajectory["success"], trajectory["reward"],
                     trajectory["num_steps"], trajectory["terminate_reason"],
                 )
+    except Exception as exc:
+        run_metadata["status"] = "failed"
+        run_metadata["failure"] = repr(exc)
+        raise
+
+    else:
+        run_metadata["status"] = "completed"
 
     finally:
+        run_metadata["processed_tasks"] = processed_tasks
+        run_metadata["total_episodes"] = total_episodes
+
         agent.close()
+
+        # ScienceWorld owns a Py4J Java gateway. We close it explicitly instead of
+        # relying on Python's destructor at interpreter shutdown.
+        if runtime is not None and hasattr(runtime, "close"):
+            runtime.close()
 
     logger.info(
         "Finished %d episode(s) over %d task(s). Results: %s",

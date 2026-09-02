@@ -11,4 +11,5 @@ outputs/
 logs/
 
 data/alfworld/json_2.1.1/
+data/alfworld/json_2.1.1.tar.gz
 envs/scienceworld/*.jar
