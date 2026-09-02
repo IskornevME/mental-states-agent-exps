@@ -2,6 +2,10 @@ name: sciworld
 split: test
 
 max_steps: 40
+
+# ScienceWorld's own internal step limit.
+internal_env_step_limit: 200
+
 history_length: 50
 include_admissible_actions: true
 

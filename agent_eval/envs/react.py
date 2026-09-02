@@ -3,9 +3,17 @@ from typing import Iterable
 
 
 def parse_react_action(llm_output: str) -> str:
-    """Parse the shared ReAct action protocol."""
+    """Parse an action from the shared ReAct protocol.
+
+    Preferred format:
+        <think>...</think>
+        <action>...</action>
+
+    The legacy "Action: ..." format is temporarily supported to keep compatibility with old QLASS trajectories.
+    """
     text = str(llm_output).strip()
 
+    # Current Qwen / ReAct format.
     match = re.search(
         r"<action>\s*(.*?)\s*</action>",
         text,
@@ -16,7 +24,7 @@ def parse_react_action(llm_output: str) -> str:
         if action:
             return action
 
-    # Temporary fallback for old QLASS trajectories/prompts.
+    # Legacy QLASS format.
     match = re.search(
         r"Action:\s*(.*)",
         text,
@@ -31,5 +39,14 @@ def parse_react_action(llm_output: str) -> str:
 
 
 def format_admissible_actions(actions: Iterable[str]) -> str:
-    actions = [str(action).strip() for action in actions if str(action).strip()]
-    return "\n".join(f"- {action}" for action in actions)
+    """Format admissible actions exactly as in the QLASS ReAct prompt.
+
+    Example:
+        'go to cabinet 1'
+         'open cabinet 1'
+    """
+    clean_actions = [str(action).strip() for action in actions if str(action).strip()]
+
+    return "\n ".join(
+        f"'{action}'" for action in clean_actions
+    )

@@ -15,6 +15,29 @@ from agent_eval.state import State
 from agent_eval.tasks import AlfWorldTask
 
 
+ALFWORLD_REACT_TEMPLATE_NO_HIS = """
+You are an expert agent operating in the ALFRED Embodied Environment.
+Your current observation is: {current_observation}
+Your admissible actions of the current situation are: [{admissible_actions}].
+
+Now it's your turn to take an action.
+You should first reason step-by-step about the current situation. This reasoning process MUST be enclosed within <think> </think> tags.
+Once you've finished your reasoning, you should choose an admissible action for current step and present it within <action> </action> tags.
+"""
+
+
+ALFWORLD_REACT_TEMPLATE = """
+You are an expert agent operating in the ALFRED Embodied Environment. Your task is to: {task_description}
+Prior to this step, you have already taken {step_count} step(s). Below are the most recent {history_length} observations and the corresponding actions you took: {action_history}
+You are now at step {current_step} and your current observation is: {current_observation}
+Your admissible actions of the current situation are: [{admissible_actions}].
+
+Now it's your turn to take an action.
+You should first reason step-by-step about the current situation. This reasoning process MUST be enclosed within <think> </think> tags.
+Once you've finished your reasoning, you should choose an admissible action for current step and present it within <action> </action> tags.
+"""
+
+
 def _process_observation(observation: str) -> str:
     if observation.startswith("You arrive at loc "):
         observation = observation[observation.find(". ") + 2 :]
@@ -24,8 +47,8 @@ def _process_observation(observation: str) -> str:
 class AlfWorldEnv(BaseEnv):
     """ALFWorld wrapper preserving the working QLASS ReAct behavior."""
 
-    def __init__(self, task: AlfWorldTask, **kwargs) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, task: AlfWorldTask, max_steps: int = 50, **kwargs) -> None:
+        super().__init__(max_steps=max_steps, **kwargs)
         self.task = task
         self.env = self._load_single_task_env(task.game_file)
 
@@ -89,54 +112,71 @@ class AlfWorldEnv(BaseEnv):
         ]
 
     def build_agent_messages(self) -> List[Dict[str, str]]:
-        recent_history = (
-            self.react_history[-self.history_length :]
-            if self.history_length > 0
-            else []
-        )
+        """
+        Build the actor prompt used by the reference QLASS ReAct setup.
+        """
+        history_length = max(int(self.history_length), 0)
 
-        parts = [
-            "You are an expert agent operating in the ALFRED Embodied Environment.",
-            f"Your task is to: {self.get_task_text()}",
-        ]
+        admissible_text = format_admissible_actions(self.get_admissible_commands())
 
-        if recent_history:
+        # First step: QLASS puts the complete initial ALFWorld observation into
+        # `current_observation`. That observation already contains the task.
+        if not self.react_history:
+            prompt = ALFWORLD_REACT_TEMPLATE_NO_HIS.format(
+                current_observation=self.react_current_observation,
+                admissible_actions=admissible_text,
+            )
+
+        else:
+            marker = "Your task is to:"
+            initial_observation = self.task.observation
+
+            if marker in initial_observation:
+                task_description = initial_observation.split(marker, 1)[1].strip()
+            else:
+                task_description = initial_observation.strip()
+
+            recent_history = (
+                self.react_history[-history_length:] if history_length > 0 else []
+            )
+
             first_step = len(self.react_history) - len(recent_history) + 1
+
             history_lines = []
+
             for offset, (observation, action) in enumerate(recent_history):
-                step = first_step + offset
+                step_num = first_step + offset
+
                 history_lines.append(
-                    f"[Observation {step}: '{observation}', Action {step}: '{action}']"
+                    f"[Observation {step_num}: '{observation}', "
+                    f"Action {step_num}: '{action}']"
                 )
-            parts.append(
-                f"Prior to this step, you have already taken "
-                f"{len(self.react_history)} step(s)."
-            )
-            parts.append(
-                "Below are the most recent observations and actions:\n"
-                + "\n".join(history_lines)
-            )
 
-        parts.append(
-            f"You are now at step {len(self.react_history) + 1} and your "
-            f"current observation is: {self.get_current_observation()}"
-        )
-
-        if self.include_admissible_actions:
-            parts.append(
-                "Your admissible actions of the current situation are:\n"
-                + format_admissible_actions(self.get_admissible_commands())
+            prompt = ALFWORLD_REACT_TEMPLATE.format(
+                task_description=task_description,
+                step_count=len(self.react_history),
+                history_length=len(recent_history),
+                action_history="\n".join(history_lines),
+                current_step=len(self.react_history) + 1,
+                current_observation=self.react_current_observation,
+                admissible_actions=admissible_text,
             )
 
-        parts.append(
-            "Now it's your turn to take an action.\n"
-            "First reason step-by-step about the current situation. "
-            "The reasoning MUST be enclosed within <think>...</think> tags.\n"
-            "Then choose one action and present it within "
-            "<action>...</action> tags."
-        )
+        # The reference Qwen setup uses admissible actions. We keep this flag only
+        # so future experiments can disable them without changing the prompt code.
+        if not self.include_admissible_actions:
+            admissible_line = (
+                "Your admissible actions of the current situation are: "
+                f"[{admissible_text}].\n"
+            )
+            prompt = prompt.replace(admissible_line, "")
 
-        return [{"role": "user", "content": "\n\n".join(parts).strip()}]
+        return [
+            {
+                "role": "user",
+                "content": prompt.strip(),
+            }
+        ]
 
     def _conduct_action(self, action: str):
         observation, _, done, info = self.env.step([action])
@@ -207,7 +247,6 @@ class AlfWorldEnv(BaseEnv):
 
     def reset(self) -> Tuple[str, State]:
         self.state = State()
-        self.state.error = self.task.game_file
 
         self.react_history = []
         self.react_current_observation = self.task.observation

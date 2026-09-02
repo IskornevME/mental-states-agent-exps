@@ -1,0 +1,9 @@
+name: qwen3_4b_sciworld
+
+agent_config: configs/agents/qwen3_4b.yaml
+env_config: configs/envs/sciworld.yaml
+
+output_dir: outputs/qwen3_4b_sciworld
+
+max_tasks: null
+num_trajectories: 1

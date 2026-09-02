@@ -1,0 +1,12 @@
+name: qwen3_4b_alfworld
+
+agent_config: configs/agents/qwen3_4b.yaml
+env_config: configs/envs/alfworld.yaml
+
+output_dir: outputs/qwen3_4b_alfworld
+
+# Null means all tasks from the selected split.
+max_tasks: null
+
+# Number of independent actor trajectories per task.
+num_trajectories: 1  # 3
