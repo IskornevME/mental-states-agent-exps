@@ -34,10 +34,115 @@ MODEL_PATH=/home/m.iskornev/qlass/models/Qwen3-4B-Instruct-2507 BENCHMARK=alfwor
 ```
 Для начала для отладки можно запустить скрипт на небольшом семпле задач. Для этого можно добавить параметр MAX_TASKS.
 
-Скрипты `calc_results_sciworld.py` и `calc_results_alfworld.py` нужны для подсчета итоговых метрик. Пример запуска:
-```bash
-python scripts/calc_results_alfworld.py --input "outputs/qwen3_4b_alfworld_run0" --output "outputs/qwen3_4b_alfworld_run0/metrics.json"
+
+### Основные параметры запуска
+
+Основные настройки эксперимента передаются через переменные окружения:
+
+* `MODEL_PATH` - путь до локального checkpoint модели или Hugging Face model ID.
+* `BENCHMARK` - среда для запуска: `alfworld` или `sciworld`.
+* `SERVER_GPU` - GPU, на которой будет поднят SGLang server.
+* `N_TRAJS` - количество независимых траекторий для каждой задачи. По умолчанию `3`.
+* `MAX_TASKS` - ограничение на количество задач. Если параметр не задан, запускается весь выбранный split.
+* `RUN_ID` - идентификатор запуска, используемый в имени output-директории.
+* `OUT_DIR` - при необходимости позволяет явно переопределить директорию с результатами.
+* `SGLANG_PORT` - порт SGLang server. По умолчанию `21003`.
+* `CONTEXT_LENGTH` - размер контекста модели. По умолчанию `32768`.
+
+Постоянные настройки агента, среды и эксперимента находятся в:
+
+```text
+configs/agents/
+configs/envs/
+configs/experiments/
 ```
+
+Например, `configs/envs/alfworld.yaml` задает `max_steps`, длину истории и использование admissible actions.
+
+### Быстрая проверка установки
+
+Перед полным экспериментом рекомендуется проверить setup на двух задачах.
+
+ALFWorld:
+
+```bash
+MODEL_PATH=/path/to/Qwen3-4B-Instruct-2507 \
+BENCHMARK=alfworld \
+SERVER_GPU=0 \
+MAX_TASKS=2 \
+RUN_ID=smoke_alfworld \
+bash scripts/run_qwen3_experiment.sh
+```
+
+ScienceWorld:
+
+```bash
+MODEL_PATH=/path/to/Qwen3-4B-Instruct-2507 \
+BENCHMARK=sciworld \
+SERVER_GPU=0 \
+MAX_TASKS=2 \
+RUN_ID=smoke_sciworld \
+bash scripts/run_qwen3_experiment.sh
+```
+
+
+### Результаты эксперимента
+
+По умолчанию launcher сохраняет результаты в:
+
+```text
+outputs/qwen3_4b_<benchmark>_run<RUN_ID>/
+```
+
+После успешного запуска там находятся:
+
+```text
+trajectories.jsonl   # полные траектории агента
+metrics.json         # итоговые benchmark-метрики
+run_metadata.json    # основные параметры и статус запуска
+logs/
+    sglang_server.log
+    experiment.log
+```
+
+`trajectories.jsonl` содержит по одной траектории на строку. Для каждого шага сохраняются observation, prompt агента, admissible actions, полный ответ модели с `<think>` и `<action>`, распарсенное действие и следующий observation.
+
+Launcher автоматически запускает подсчёт метрик после завершения эксперимента. При необходимости их можно пересчитать отдельно:
+
+```bash
+python scripts/calc_results_alfworld.py \
+    --input outputs/qwen3_4b_alfworld_run0 \
+    --output outputs/qwen3_4b_alfworld_run0/metrics.json
+```
+
+или:
+
+```bash
+python scripts/calc_results_sciworld.py \
+    --input outputs/qwen3_4b_sciworld_run0 \
+    --output outputs/qwen3_4b_sciworld_run0/metrics.json
+```
+
+### Повторный запуск
+
+`run_experiment.py` по умолчанию не перезаписывает существующий `trajectories.jsonl`. Поэтому для нового эксперимента лучше использовать новый `RUN_ID`:
+
+```bash
+RUN_ID=1 ...
+```
+
+Если запуск завершился уже после сохранения trajectories, но упал только подсчёт метрик, повторно запускать inference не нужно - достаточно отдельно запустить соответствующий `calc_results_*.py`.
+
+### Возможные проблемы
+
+Если launcher сообщает, что на `SGLANG_PORT` уже отвечает сервер, нужно остановить предыдущий SGLang process или выбрать другой порт:
+
+```bash
+SGLANG_PORT=21005 ...
+```
+
+Для ScienceWorld наличие `terminate_reason="negative_score"` является нормальным способом завершения episode и не означает падение программы.
+
 
 
 ## Common interaction API

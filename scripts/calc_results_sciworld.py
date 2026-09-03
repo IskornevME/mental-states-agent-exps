@@ -32,7 +32,8 @@ def main() -> None:
     )
 
     parser.add_argument(
-        "input",
+        "--input",
+        required=True,
         help="Run directory or path to trajectories.jsonl.",
     )
 

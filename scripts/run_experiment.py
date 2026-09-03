@@ -354,6 +354,7 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     trajectories_path = output_dir / "trajectories.jsonl"
+    metadata_path = output_dir / "run_metadata.json"
 
     if trajectories_path.exists():
         if args.overwrite:
@@ -387,6 +388,12 @@ def main() -> None:
     total_episodes = 0
 
     run_metadata = {
+        "experiment_name": str(experiment_config["name"]),
+        "benchmark": benchmark,
+        "split": split,
+        "model_name": str(agent_config["model_name"]),
+        "num_trajectories": num_trajectories,
+        "max_tasks": max_tasks,
         "status": "running",
     }
 
@@ -440,12 +447,10 @@ def main() -> None:
         run_metadata["processed_tasks"] = processed_tasks
         run_metadata["total_episodes"] = total_episodes
 
-        agent.close()
+        with metadata_path.open("w", encoding="utf-8") as f:
+            json.dump(run_metadata, f, ensure_ascii=False, indent=2)
 
-        # ScienceWorld owns a Py4J Java gateway. We close it explicitly instead of
-        # relying on Python's destructor at interpreter shutdown.
-        if runtime is not None and hasattr(runtime, "close"):
-            runtime.close()
+        agent.close()
 
     logger.info(
         "Finished %d episode(s) over %d task(s). Results: %s",
