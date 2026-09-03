@@ -1,0 +1,16 @@
+name: alfworld
+split: test
+
+# Reference Qwen3-4B setup.
+# 50 steps are used because this cap reproduced the target ALFWorld results.
+max_steps: 50
+
+# Number of previous observation/action pairs included in the ReAct prompt.
+history_length: 50
+
+# Qwen3-4B receives the current admissible ALFWorld actions.
+include_admissible_actions: true
+
+# Optional dataset slicing.
+part_num: 1
+part_idx: -1

@@ -1,0 +1,28 @@
+type: sglang_chat
+
+# OpenAI-compatible SGLang server.
+server_address: http://127.0.0.1:21003
+
+# Reference actor checkpoint.
+model_name: Qwen/Qwen3-4B-Instruct-2507
+
+api_model_name: ""
+
+# Generation parameters used by the successful Qwen ReAct baseline.
+max_new_tokens: 2048
+temperature: 0.7
+top_p: 0.8
+top_k: 20
+min_p: 0.0
+
+presence_penalty: 0.0
+frequency_penalty: 0.0
+
+# Network robustness.
+request_timeout: 300
+max_retries: 3
+retry_delay_seconds: 5
+
+# SGLang-specific generation option used in the ReAct baseline.
+extra_request_body:
+  min_tokens: 128
