@@ -3,6 +3,7 @@ import copy
 import json
 import logging
 import sys
+from tqdm import tqdm
 from pathlib import Path
 from typing import Any, Dict
 
@@ -379,6 +380,15 @@ def main() -> None:
         benchmark, split, n_tasks,
     )
 
+    # n_tasks is the number of tasks available after dataset slicing.
+    # max_tasks additionally limits how many of them this concrete run executes.
+    num_tasks_to_run = n_tasks if max_tasks is None else min(n_tasks, max_tasks)
+
+    logger.info(
+        "Running %d/%d available task(s), %d trajectory/trajectories per task",
+        num_tasks_to_run, n_tasks, num_trajectories,
+    )
+
     runtime = _prepare_benchmark_runtime(benchmark, env_config)
 
     agent_cls = AGENT_REGISTRY[agent_type]
@@ -397,13 +407,16 @@ def main() -> None:
         "status": "running",
     }
 
+    # One progress-bar iteration corresponds to one complete benchmark task.
+    progress_bar = tqdm( total=num_tasks_to_run, dynamic_ncols=True)
+
     try:
         # --------------------------------------------------------------
         # Benchmark-agnostic actor-only loop.
         # --------------------------------------------------------------
 
         for task in tasks:
-            if (max_tasks is not None and processed_tasks >= max_tasks):
+            if processed_tasks >= num_tasks_to_run:
                 break
 
             processed_tasks += 1
@@ -435,6 +448,9 @@ def main() -> None:
                     task.task_id, attempt_id, trajectory["success"], trajectory["reward"],
                     trajectory["num_steps"], trajectory["terminate_reason"],
                 )
+            
+            # Update only after every trajectory for this task has finished.
+            progress_bar.update(1)
     except Exception as exc:
         run_metadata["status"] = "failed"
         run_metadata["failure"] = repr(exc)
@@ -444,6 +460,8 @@ def main() -> None:
         run_metadata["status"] = "completed"
 
     finally:
+        progress_bar.close()
+
         run_metadata["processed_tasks"] = processed_tasks
         run_metadata["total_episodes"] = total_episodes
 
