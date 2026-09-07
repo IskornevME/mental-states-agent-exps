@@ -2,6 +2,7 @@ import argparse
 import copy
 import json
 import logging
+import random
 import sys
 from tqdm import tqdm
 from pathlib import Path
@@ -267,6 +268,22 @@ def main() -> None:
     )
 
     parser.add_argument(
+        "--human",
+        action="store_true",
+        help=(
+            "Use an interactive human actor instead of the configured LLM actor"
+        ),
+    )
+    parser.add_argument(
+        "--task-seed",
+        type=int,
+        default=42,
+        help=(
+            "Random seed used to select tasks in human mode. Ignored for regular LLM experiments."
+        ),
+    )
+
+    parser.add_argument(
         "--num-trajectories",
         type=int,
         default=None,
@@ -296,7 +313,11 @@ def main() -> None:
 
     experiment_config = _load_yaml(_repo_path(args.config))
 
-    agent_config = _load_yaml(_repo_path(experiment_config["agent_config"]))
+    agent_config_path = (
+        REPO_ROOT / "configs/agents/human.yaml" if args.human 
+        else _repo_path(experiment_config["agent_config"])
+    )
+    agent_config = _load_yaml(agent_config_path)
 
     env_config = _load_yaml(_repo_path(experiment_config["env_config"]))
 
@@ -309,14 +330,14 @@ def main() -> None:
 
     if agent_type not in AGENT_REGISTRY:
         raise ValueError(
-            f"Unsupported agent type: "
-            f"{agent_type}"
+            f"Unsupported agent type: {agent_type}"
         )
 
-    if args.server_address:
-        agent_config["server_address"] = args.server_address
-    if args.model_name:
-        agent_config["model_name"] = args.model_name
+    if not args.human:
+        if args.server_address:
+            agent_config["server_address"] = args.server_address
+        if args.model_name:
+            agent_config["model_name"] = args.model_name
 
     # ------------------------------------------------------------------
     # Dataset/run settings.
@@ -331,6 +352,10 @@ def main() -> None:
     max_tasks = (
         args.max_tasks if args.max_tasks is not None else experiment_config.get("max_tasks")
     )
+    # Human exploration is intentionally small by default.
+    # --max-tasks can still be used to request, for example, 2 instead of 3 tasks.
+    if args.human and max_tasks is None:
+        max_tasks = 3
 
     if max_tasks is not None:
         max_tasks = int(max_tasks)
@@ -338,10 +363,15 @@ def main() -> None:
         if max_tasks <= 0:
             raise ValueError("max_tasks must be positive")
 
-    num_trajectories = int(
-        args.num_trajectories
-        if args.num_trajectories is not None else experiment_config.get("num_trajectories", 1)
-    )
+    if args.human and args.num_trajectories is None:
+        # Do not make a person solve the same task several times just because
+        # the corresponding LLM experiment uses best-of-N trajectories.
+        num_trajectories = 1
+    else:
+        num_trajectories = int(
+            args.num_trajectories
+            if args.num_trajectories is not None else experiment_config.get("num_trajectories", 1)
+        )
 
     if num_trajectories <= 0:
         raise ValueError("num_trajectories must be positive")
@@ -380,9 +410,27 @@ def main() -> None:
         benchmark, split, n_tasks,
     )
 
-    # n_tasks is the number of tasks available after dataset slicing.
-    # max_tasks additionally limits how many of them this concrete run executes.
-    num_tasks_to_run = n_tasks if max_tasks is None else min(n_tasks, max_tasks)
+    if args.human:
+        # Human mode is intended for inspecting a few representative tasks rather
+        # than walking through the dataset from the beginning
+        available_tasks = list(tasks)
+
+        num_tasks_to_run = min(n_tasks, max_tasks)
+
+        rng = random.Random(args.task_seed)
+        selected_tasks = rng.sample(available_tasks, k=num_tasks_to_run)
+
+        tasks = iter(selected_tasks)
+
+        logger.info(
+            "Human mode selected %d random task(s) with seed=%d: %s",
+            num_tasks_to_run, args.task_seed,
+            [task.task_id for task in selected_tasks],
+        )
+    else:
+        # n_tasks is the number of tasks available after dataset slicing.
+        # max_tasks additionally limits how many of them this concrete run executes.
+        num_tasks_to_run = n_tasks if max_tasks is None else min(n_tasks, max_tasks)
 
     logger.info(
         "Running %d/%d available task(s), %d trajectory/trajectories per task",
@@ -394,21 +442,28 @@ def main() -> None:
     agent_cls = AGENT_REGISTRY[agent_type]
     agent = agent_cls(agent_config)
 
+    experiment_name = (
+        f"human_{benchmark}"
+        if args.human else str(experiment_config["name"])
+    )
+
     processed_tasks = 0
     total_episodes = 0
 
     run_metadata = {
-        "experiment_name": str(experiment_config["name"]),
+        "experiment_name": experiment_name,
+        "actor_type": agent_type,
         "benchmark": benchmark,
         "split": split,
-        "model_name": str(agent_config["model_name"]),
+        "model_name": agent_config.get("model_name"),
         "num_trajectories": num_trajectories,
         "max_tasks": max_tasks,
+        "task_seed": args.task_seed if args.human else None,
         "status": "running",
     }
 
     # One progress-bar iteration corresponds to one complete benchmark task.
-    progress_bar = tqdm( total=num_tasks_to_run, dynamic_ncols=True)
+    progress_bar = tqdm(total=num_tasks_to_run, dynamic_ncols=True, disable=args.human)
 
     try:
         # --------------------------------------------------------------
