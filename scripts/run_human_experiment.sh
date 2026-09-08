@@ -26,6 +26,10 @@ case "${BENCHMARK}" in
         EXP_CONFIG="configs/experiments/qwen3_4b_sciworld.yaml"
         METRICS_SCRIPT="scripts/calc_results_sciworld.py"
         ;;
+    webshop)
+        EXP_CONFIG="configs/experiments/qwen3_4b_webshop.yaml"
+        METRICS_SCRIPT="scripts/calc_results_webshop.py"
+        ;;
     *)
         echo "[ERROR] Unsupported benchmark: ${BENCHMARK}" >&2
         exit 1

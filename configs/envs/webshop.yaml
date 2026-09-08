@@ -1,0 +1,16 @@
+name: webshop
+split: test
+
+max_steps: 5
+
+# Original QLASS WebShop prompt uses one conversation-style ICL example.
+num_icl_examples: 1
+instruction_path: agent_eval/prompts/webshop/instruction.txt
+icl_path: agent_eval/prompts/webshop/icl.json
+
+# WebShop exposes clickables/search availability internally, but the QLASS
+# wrapper does not append a separate Available Actions block to the prompt.
+include_admissible_actions: false
+
+part_num: 1
+part_idx: -1
