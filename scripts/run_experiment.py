@@ -161,6 +161,7 @@ def _run_episode(
 
     step_records = []
 
+    # Для экспертных траекторий тут просто должен быть цикл for expert_step in expert_trajectory:
     while not state.finished:
         # Environment owns benchmark-specific prompt construction.
         messages = env.build_agent_messages()
@@ -188,10 +189,12 @@ def _run_episode(
 
         # Save the action separately from the raw model output.
         try:
+            # вот это действие после парсинга нам надо сравнить с экспертным действием - expert_step["action"]
             parsed_action = parse_react_action(raw_output)
         except ValueError:
             parsed_action = "__invalid_action__"
 
+        # в случае экспертных траекторий переходить дальше нужно строго по expert trajectory
         observation_after, state = env.step(raw_output)
 
         step_records.append(
