@@ -296,6 +296,58 @@ def calculate_sciworld_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
     return metrics
 
 
+def calculate_webshop_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Calculate WebShop average-reward metrics."""
+    grouped = group_trajectories(records, expected_benchmark="webshop")
+
+    n_trajs = len(next(iter(grouped.values())))
+
+    rewards_by_task = [
+        [
+            safe_float(trajectory.get("reward")) for trajectory in trajectories
+        ]
+        for trajectories in grouped.values()
+    ]
+
+    metrics: dict[str, Any] = {
+        "benchmark": "webshop",
+        "num_tasks": len(grouped),
+        "n_trajs": n_trajs,
+        "num_trajectories": len(records),
+        "reward": {
+            "first": mean(rewards[0] for rewards in rewards_by_task),
+            "last": mean(rewards[-1] for rewards in rewards_by_task),
+            "mean_of_n": mean(mean(rewards) for rewards in rewards_by_task),
+            "best_of_n": mean(max(rewards) for rewards in rewards_by_task),
+        },
+        "by_attempt": [],
+        "best_of_k": [],
+    }
+
+    for attempt_id in range(n_trajs):
+        attempt_rewards = [rewards[attempt_id] for rewards in rewards_by_task]
+
+        metrics["by_attempt"].append(
+            {
+                "attempt_id": attempt_id,
+                "avg_reward": mean(attempt_rewards),
+                "num_tasks": len(attempt_rewards),
+            }
+        )
+
+    for k in range(1, n_trajs + 1):
+        metrics["best_of_k"].append(
+            {
+                "k": k,
+                "avg_reward": mean(
+                    max(rewards[:k]) for rewards in rewards_by_task
+                ),
+            }
+        )
+
+    return metrics
+
+
 def save_metrics(path: str | Path, metrics: dict[str, Any]) -> None:
     """Save metrics in a machine-readable form."""
     Path(path).write_text(

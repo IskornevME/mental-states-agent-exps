@@ -16,10 +16,10 @@ if str(REPO_ROOT) not in sys.path:
 
 from agent_eval.agents import AGENT_REGISTRY
 from agent_eval.compat import apply_sciworld_step_patch
-from agent_eval.envs import AlfWorldEnv, SciWorldEnv
+from agent_eval.envs import AlfWorldEnv, SciWorldEnv, WebShopEnv
 from agent_eval.envs.react import parse_react_action
 from agent_eval.paths import SCIENCEWORLD_JAR
-from agent_eval.tasks import AlfWorldTask, SciWorldTask
+from agent_eval.tasks import AlfWorldTask, SciWorldTask, WebShopTask
 
 
 logger = logging.getLogger("agent_eval")
@@ -30,11 +30,13 @@ logger = logging.getLogger("agent_eval")
 TASK_REGISTRY = {
     "alfworld": AlfWorldTask,
     "sciworld": SciWorldTask,
+    "webshop": WebShopTask,
 }
 
 ENV_REGISTRY = {
     "alfworld": AlfWorldEnv,
     "sciworld": SciWorldEnv,
+    "webshop": WebShopEnv,
 }
 
 
@@ -69,6 +71,12 @@ def _prepare_benchmark_runtime(
 
     ScienceWorld uses one Java-backed ScienceWorldEnv instance and loads a different task into it before each episode, matching current QLASS usage.
     """
+    if benchmark == "webshop":
+        from eval.webshop.web_agent_site.envs import WebAgentTextEnv
+
+        # Exact runtime configuration used by QLASS.
+        return WebAgentTextEnv(observation_mode="text", human_goals=True)
+
     if benchmark != "sciworld":
         return None
 
@@ -113,7 +121,7 @@ def _build_env(
         }
     }
 
-    if benchmark == "sciworld":
+    if benchmark in {"sciworld", "webshop"}:
         return env_cls(task=task, env=runtime, **wrapper_config)
 
     return env_cls(task=task, **wrapper_config)
@@ -129,6 +137,9 @@ def _task_metadata(benchmark: str, task) -> Dict[str, Any]:
             "sub_task_name": task.sub_task_name,
             "variation_idx": task.variation_idx,
         }
+
+    if benchmark == "webshop":
+        return {"session_id": task.session_id}
 
     return {}
 
@@ -491,7 +502,7 @@ def main() -> None:
                     benchmark=benchmark,
                     split=split,
                     attempt_id=attempt_id,
-                    experiment_name=str(experiment_config["name"]),
+                    experiment_name=experiment_name,
                 )
 
                 _append_jsonl(trajectories_path, trajectory)

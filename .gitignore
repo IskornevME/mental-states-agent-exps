@@ -13,3 +13,9 @@ logs/
 data/alfworld/json_2.1.1/
 data/alfworld/json_2.1.1.tar.gz
 envs/scienceworld/*.jar
+
+eval/webshop/data/
+eval/webshop/search_engine/indexes/
+eval/webshop/search_engine/indexes_*/
+eval/webshop/search_engine/resources/
+eval/webshop/search_engine/resources_*/
