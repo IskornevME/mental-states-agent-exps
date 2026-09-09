@@ -6,6 +6,7 @@ The current MVP contains only the common environment/task layer for:
 
 - ALFWorld
 - ScienceWorld
+- Webshop
 
 
 ## Инструкция по запуску
@@ -85,6 +86,61 @@ RUN_ID=smoke_sciworld \
 bash scripts/run_qwen3_experiment.sh
 ```
 
+### Запуск эксперимента с QNet critic
+
+Для ALFWorld также поддерживается режим с обученным QNet critic. На каждом шаге actor генерирует несколько независимых ReAct-кандидатов из одного и того же состояния, после чего critic оценивает каждый вариант по представлению `state + action`. В среде выполняется кандидат с максимальным Q-value.
+
+Actor и critic используют отдельные GPU: actor запускается через SGLang на `SERVER_GPU`, а QNet critic загружается локально на `CRITIC_GPU`.
+
+Для запуска используется отдельный launcher:
+
+```bash
+scripts/run_qwen3_experiment_w_critic.sh
+```
+
+Пример:
+
+```bash
+MODEL_PATH=/home/m.iskornev/qlass/models/Qwen3-4B-Instruct-2507 \
+CRITIC_MODEL_PATH=/home/m.iskornev/qlass/models/qlass-Qwen3-4B-Instruct-2507-alfworld-Q-recovered \
+SERVER_GPU=5 \
+CRITIC_GPU=6 \
+N_CANDIDATES=2 \
+N_TRAJS=3 \
+RUN_ID=0 \
+bash scripts/run_qwen3_experiment_w_critic.sh
+```
+
+Для короткой проверки setup можно дополнительно задать:
+
+```bash
+MAX_TASKS=2
+```
+
+Основные параметры:
+
+* `MODEL_PATH` - checkpoint или Hugging Face model ID actor-модели.
+* `CRITIC_MODEL_PATH` - путь до обученного QNet checkpoint. Параметр обязателен.
+* `CRITIC_TOKENIZER_PATH` - tokenizer для critic. По умолчанию используется `MODEL_PATH`.
+* `SERVER_GPU` - GPU для SGLang actor server.
+* `CRITIC_GPU` - отдельная GPU для локального QNet critic.
+* `N_CANDIDATES` - количество actor-кандидатов, которые critic оценивает на каждом шаге. По умолчанию `2`.
+* `N_TRAJS` - количество независимых полных траекторий для каждой задачи. По умолчанию `3`.
+* `MAX_TASKS` - необязательное ограничение на количество задач.
+* `RUN_ID` - идентификатор запуска.
+* `OUT_DIR` - позволяет явно переопределить директорию с результатами.
+
+Сейчас QNet critic поддерживается только для ALFWorld.
+
+По умолчанию результаты сохраняются в:
+
+```text
+outputs/qwen3_4b_alfworld_qnet_run<RUN_ID>/
+```
+
+Формат `trajectories.jsonl` совместим с обычными actor-only экспериментами. Дополнительно для каждого шага сохраняются все рассмотренные кандидаты, их Q-values, источник score и идентификатор выбранного critic'ом кандидата. Поэтому стандартный ALFWorld calculator можно использовать без изменений.
+
+
 
 ### Результаты эксперимента
 
@@ -163,7 +219,48 @@ SGLANG_PORT=21005 ...
 
 Для ScienceWorld наличие `terminate_reason="negative_score"` является нормальным способом завершения episode и не означает падение программы.
 
+## Запуск на Webshop
 
+Есть также возможность запуска эксперимента на бенчмарке Webshop, но для этого требуется создать отдельное окружение со своими зависимостями. Для начала надо создать новое окружение и установить в него все либы из `/eval/webshop/requirements.txt`:
+```bash
+conda create -n qwen_webshop python=3.10
+conda activate qwen_webshop
+pip install -r requirements.txt
+```
+Затем потребуется скачать с hugging-face необходимые данные. Для этого достаточно выполнить:
+```bash
+python - <<'PY'
+from huggingface_hub import hf_hub_download
+
+repo_id = "YWZBrandon/webshop-data"
+
+files = [
+    "items_shuffle.json",
+    "items_ins_v2.json",
+    "items_human_ins.json",
+]
+
+for filename in files:
+    path = hf_hub_download(
+        repo_id=repo_id,
+        repo_type="dataset",
+        filename=filename,
+        local_dir="data",
+    )
+    print(f"{filename}: {path}")
+PY
+```
+Чтобы код отработал возможно потребуется установить `huggingface_hub`.
+Затем потребуется перейти в директорию `/eval/webshop/search_engine` и выполнить там команды:
+```bash
+python -m spacy download en_core_web_lg
+mkdir -p resources resources_100 resources_1k resources_100k
+conda install -c conda-forge openjdk=11
+python convert_product_file_format.py
+mkdir -p indexes
+bash run_indexing.sh
+```
+После этого окружение готово к запуску эксперимента.
 
 ## Common interaction API
 

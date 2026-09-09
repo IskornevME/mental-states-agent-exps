@@ -448,7 +448,7 @@ def _append_jsonl(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run a minimal actor-only LLM-agent experiment.")
+    parser = argparse.ArgumentParser(description="Run an LLM-agent experiment, optionally with a critic.")
 
     parser.add_argument(
         "--config",
@@ -749,7 +749,7 @@ def main() -> None:
 
     try:
         # --------------------------------------------------------------
-        # Benchmark-agnostic actor-only loop.
+        # Benchmark-agnostic experiment loop.
         # --------------------------------------------------------------
 
         for task in tasks:

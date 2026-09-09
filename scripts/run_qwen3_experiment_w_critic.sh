@@ -6,6 +6,12 @@ set -Eeuo pipefail
 # -----------------------------------------------------------------------------
 
 BENCHMARK="${BENCHMARK:-alfworld}"
+
+if [[ "${BENCHMARK}" != "alfworld" ]]; then
+    echo "[ERROR] QNet critic experiments currently support only ALFWorld." >&2
+    exit 1
+fi
+
 EXP_CONFIG="configs/experiments/qwen3_4b_alfworld_qnet.yaml"
 METRICS_SCRIPT="scripts/calc_results_alfworld.py"
 
@@ -23,7 +29,7 @@ N_TRAJS="${N_TRAJS:-3}"
 MAX_TASKS="${MAX_TASKS:-}"
 
 RUN_ID="${RUN_ID:-0}"
-OUT_DIR="${OUT_DIR:-outputs/qwen3_4b_${BENCHMARK}_run${RUN_ID}}"
+OUT_DIR="${OUT_DIR:-outputs/qwen3_4b_${BENCHMARK}_qnet_run${RUN_ID}}"
 
 SERVER_GPU="${SERVER_GPU:-5}"
 CRITIC_GPU="${CRITIC_GPU:-6}"
@@ -84,16 +90,18 @@ fi
 # Configuration summary
 # -----------------------------------------------------------------------------
 
-echo "[CONFIG] Benchmark:       ${BENCHMARK}"
-echo "[CONFIG] Model:           ${MODEL_PATH}"
-echo "[CONFIG] Server GPU:      ${SERVER_GPU}"
-echo "[CONFIG] Server address:  ${SERVER_ADDRESS}"
-echo "[CONFIG] Context length:  ${CONTEXT_LENGTH}"
-echo "[CONFIG] Trajectories:    ${N_TRAJS}"
-echo "[CONFIG] Critic GPU:      ${CRITIC_GPU}"
-echo "[CONFIG] Num candidates:  ${N_CANDIDATES}"
-echo "[CONFIG] Max tasks:       ${MAX_TASKS:-all}"
-echo "[CONFIG] Output dir:      ${OUT_DIR}"
+echo "[CONFIG] Benchmark:        ${BENCHMARK}"
+echo "[CONFIG] Model:            ${MODEL_PATH}"
+echo "[CONFIG] Server GPU:       ${SERVER_GPU}"
+echo "[CONFIG] Server address:   ${SERVER_ADDRESS}"
+echo "[CONFIG] Context length:   ${CONTEXT_LENGTH}"
+echo "[CONFIG] Trajectories:     ${N_TRAJS}"
+echo "[CONFIG] Critic model:     ${CRITIC_MODEL_PATH}"
+echo "[CONFIG] Critic tokenizer: ${CRITIC_TOKENIZER_PATH}"
+echo "[CONFIG] Critic GPU:       ${CRITIC_GPU}"
+echo "[CONFIG] Num candidates:   ${N_CANDIDATES}"
+echo "[CONFIG] Max tasks:        ${MAX_TASKS:-all}"
+echo "[CONFIG] Output dir:       ${OUT_DIR}"
 
 
 # -----------------------------------------------------------------------------
@@ -174,12 +182,13 @@ fi
 
 
 # -----------------------------------------------------------------------------
-# Run actor-only experiment
+# Run actor + QNet critic experiment
 # -----------------------------------------------------------------------------
 
-echo "[INFO] Starting ${BENCHMARK} experiment."
+echo "[INFO] Starting ${BENCHMARK} experiment with QNet critic."
 
-# The client itself does not need a GPU: the actor is served by SGLang.
+# The actor is served by SGLang on SERVER_GPU.
+# The local runner receives only CRITIC_GPU, which is used by the QNet critic.
 CUDA_VISIBLE_DEVICES="${CRITIC_GPU}" \
     "${PYTHON}" "${RUNNER_ARGS[@]}" \
     2>&1 | tee "${EXPERIMENT_LOG}"
