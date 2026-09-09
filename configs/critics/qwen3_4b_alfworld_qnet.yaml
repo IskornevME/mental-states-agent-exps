@@ -1,0 +1,13 @@
+type: qwen_qnet
+
+# Overridden by the critic launcher.
+checkpoint_path: ""
+tokenizer_path: ""
+
+# Must match Qwen QNet training.
+max_prompt_tokens: 8192
+apply_sigmoid: false
+
+# The launcher exposes exactly one physical critic GPU to this process,
+# therefore "cuda" resolves to logical cuda:0.
+device: cuda
