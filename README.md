@@ -262,6 +262,77 @@ bash run_indexing.sh
 ```
 После этого окружение готово к запуску эксперимента.
 
+## Добавление нового агента
+Нужно будет создать файл, в котором описать логику обращения к этому агенту:
+```bash
+agent_eval/agents/
+    base.py
+    sglang.py
+    new_api.py       # новый
+```
+Если данный агент возвращает thinking отдельно (то есть у него есть такой режим), то в функции `act()` нового агента можно сделать что-то вроде:
+```bash
+def act(self, messages: List[dict]) -> str:
+    response = self._call_api(messages)
+
+    thinking = response.reasoning.strip()
+    action_text = response.content.strip()
+
+    # Если final response API уже содержит <action>, можно оставить его.
+    action = parse_react_action(action_text)
+
+    return (
+        f"<think>{thinking}</think>\n"
+        f"<action>{action}</action>"
+    )
+```
+То есть лучше самим сериализовать thinking в используемый внутренний формат. Если модель имеет встроенный thinking, но он скрыт (то есть его нельзя получить), тогда возвращаем только действие `return f"<action>{action}</action>"`.
+
+Опять же, если агент имеет встроенный thinking, то нужно будет скорретировать промпт так, чтобы в нем не просить модель еще раз размышлять. То есть надо сделать что-то вроде (для Alfworld; промты лежат в `/agent_eval/envs/alfworld.py`):
+```bash
+"Now it's your turn to take an action.\n"
+"Choose one admissible action for the current step and present it "
+"within <action> </action> tags."
+```
+То есть без ращзмышления. В идеале лучше добавить флаг `require_think_tags`, которые бы за это отвечал, чтоб можно было легко переключаться между агентами.
+
+Далее в `/agent_eval/agents/__init__.py` нужно зарегестрировать нового агента:
+```bash
+AGENT_REGISTRY = {
+    "sglang_chat": SGLangChatAgent,
+    "human": HumanAgent,
+    "new_api": NewAPIAgent,
+}
+```
+И добавить новые конфиги в `/configs`:
+Сначала конфиг агента в `/agents`:
+```
+type: new_api
+
+model_name: some-reasoning-model
+
+api_key_env: NEW_API_KEY
+base_url: ...
+
+max_tokens: 4096
+temperature: 0.7
+request_timeout: 300
+```
+Затем конфиг эксперимента
+```
+name: new_model_alfworld
+
+agent_config: configs/agents/new_api.yaml
+env_config: configs/envs/alfworld.yaml
+
+output_dir: outputs/new_model_alfworld
+
+max_tasks: null
+num_trajectories: 3
+```
+
+Финально важно не забыть подставить нужные параметры в .sh скрипт.
+
 ## Common interaction API
 
 Every environment implements:
