@@ -7,21 +7,43 @@ set -Eeuo pipefail
 
 BENCHMARK="${BENCHMARK:-alfworld}"
 
-if [[ "${BENCHMARK}" != "alfworld" ]]; then
-    echo "[ERROR] QNet critic experiments currently support only ALFWorld." >&2
-    exit 1
-fi
-
-EXP_CONFIG="configs/experiments/qwen3_4b_alfworld_qnet.yaml"
-METRICS_SCRIPT="scripts/calc_results_alfworld.py"
+case "${BENCHMARK}" in
+    alfworld)
+        EXP_CONFIG="configs/experiments/qwen3_4b_alfworld_qnet.yaml"
+        METRICS_SCRIPT="scripts/calc_results_alfworld.py"
+        ;;
+    sciworld)
+        EXP_CONFIG="configs/experiments/qwen3_4b_sciworld_qnet.yaml"
+        METRICS_SCRIPT="scripts/calc_results_sciworld.py"
+        ;;
+    webshop)
+        EXP_CONFIG="configs/experiments/qwen3_4b_webshop_qnet.yaml"
+        METRICS_SCRIPT="scripts/calc_results_webshop.py"
+        ;;
+    *)
+        echo "[ERROR] Unsupported benchmark: ${BENCHMARK}" >&2
+        exit 1
+        ;;
+esac
 
 # Use the currently activated Python environment by default.
 PYTHON="${PYTHON:-python}"
 
 MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3-4B-Instruct-2507}"
 
+# ВАЖНО: критик должен дообучаться именно под выбарнный ваше бенчмарк
 CRITIC_MODEL_PATH="${CRITIC_MODEL_PATH:-}"
 CRITIC_TOKENIZER_PATH="${CRITIC_TOKENIZER_PATH:-${MODEL_PATH}}"
+
+if [[ -z "${CRITIC_MODEL_PATH}" ]]; then
+    echo "[ERROR] CRITIC_MODEL_PATH must point to a trained QNet checkpoint." >&2
+    exit 1
+fi
+
+if [[ ! -d "${CRITIC_MODEL_PATH}" ]]; then
+    echo "[ERROR] Critic checkpoint directory not found: ${CRITIC_MODEL_PATH}" >&2
+    exit 1
+fi
 
 N_CANDIDATES="${N_CANDIDATES:-2}"
 

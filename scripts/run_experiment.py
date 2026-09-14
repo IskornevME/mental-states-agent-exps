@@ -554,6 +554,7 @@ def main() -> None:
 
     critic_config = None
     critic_type = None
+    critic_benchmark = None
 
     critic_config_path = experiment_config.get("critic_config")
     if critic_config_path is not None:
@@ -569,6 +570,13 @@ def main() -> None:
 
         critic_type = str(critic_config["type"]).strip().lower()
 
+        critic_benchmark = str(critic_config.get("benchmark", "")).strip().lower()
+
+        if not critic_benchmark:
+            raise ValueError(
+                "Critic config must explicitly define the benchmark the critic was trained for."
+            )
+
         if critic_type not in CRITIC_REGISTRY:
             raise ValueError(f"Unsupported critic type: {critic_type}")
 
@@ -577,8 +585,12 @@ def main() -> None:
     if benchmark not in TASK_REGISTRY:
         raise ValueError(f"Unsupported benchmark: {benchmark}")
 
-    if critic_config is not None and benchmark != "alfworld":
-        raise ValueError("The current Qwen QNet critic is trained for ALFWorld only.")
+    if critic_config is not None and critic_benchmark != benchmark:
+        raise ValueError(
+            f"Critic/benchmark mismatch: critic is configured for {critic_benchmark!r}, "
+            f"but the experiment uses {benchmark!r}. Use a critic trained specifically for this benchmark "
+            "and its current ReAct prompt protocol."
+        )
 
     agent_type = str(agent_config["type"]).strip().lower()
 
@@ -739,6 +751,7 @@ def main() -> None:
 
         "critic_type": critic_type,
         "num_candidates": num_candidates,
+        "critic_benchmark": critic_benchmark,
     }
 
     if critic_config is not None:

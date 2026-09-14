@@ -41,7 +41,7 @@ MODEL_PATH=/home/m.iskornev/qlass/models/Qwen3-4B-Instruct-2507 BENCHMARK=alfwor
 Основные настройки эксперимента передаются через переменные окружения:
 
 * `MODEL_PATH` - путь до локального checkpoint модели или Hugging Face model ID.
-* `BENCHMARK` - среда для запуска: `alfworld` или `sciworld`.
+* `BENCHMARK` - среда для запуска: `alfworld`, `sciworld`, `webshop`.
 * `SERVER_GPU` - GPU, на которой будет поднят SGLang server.
 * `N_TRAJS` - количество независимых траекторий для каждой задачи. По умолчанию `3`.
 * `MAX_TASKS` - ограничение на количество задач. Если параметр не задан, запускается весь выбранный split.
@@ -54,6 +54,7 @@ MODEL_PATH=/home/m.iskornev/qlass/models/Qwen3-4B-Instruct-2507 BENCHMARK=alfwor
 
 ```text
 configs/agents/
+configs/critics/
 configs/envs/
 configs/experiments/
 ```
@@ -88,7 +89,7 @@ bash scripts/run_qwen3_experiment.sh
 
 ### Запуск эксперимента с QNet critic
 
-Для ALFWorld также поддерживается режим с обученным QNet critic. На каждом шаге actor генерирует несколько независимых ReAct-кандидатов из одного и того же состояния, после чего critic оценивает каждый вариант по представлению `state + action`. В среде выполняется кандидат с максимальным Q-value.
+Для ALFWorld, ScienceWorld и WebShop поддерживается общий режим запуска с QNet critic. На каждом шаге actor генерирует несколько независимых ReAct-кандидатов из одного и того же состояния, после чего critic оценивает каждый вариант по представлению `state + action`. В среде выполняется кандидат с максимальным Q-value.
 
 Actor и critic используют отдельные GPU: actor запускается через SGLang на `SERVER_GPU`, а QNet critic загружается локально на `CRITIC_GPU`.
 
@@ -98,7 +99,13 @@ Actor и critic используют отдельные GPU: actor запуск�
 scripts/run_qwen3_experiment_w_critic.sh
 ```
 
-Пример:
+Benchmark выбирается переменной BENCHMARK: alfworld, sciworld, webshop
+
+**Важно:** QNet critic является benchmark-specific. Для выбранной среды необходимо использовать critic, который был обучен именно на этом benchmark и на текущем ReAct-формате его state + action representation.
+
+Например, ALFWorld critic нельзя использовать для ScienceWorld или WebShop. Для ScienceWorld и WebShop необходимо отдельно обучить соответствующие Qwen QNet critics.
+
+Текущий ALFWorld critic можно запустить, например, так:
 
 ```bash
 MODEL_PATH=/home/m.iskornev/qlass/models/Qwen3-4B-Instruct-2507 \
@@ -119,6 +126,7 @@ MAX_TASKS=2
 
 Основные параметры:
 
+* `BENCHMARK` — `alfworld`, `sciworld` или `webshop`.
 * `MODEL_PATH` - checkpoint или Hugging Face model ID actor-модели.
 * `CRITIC_MODEL_PATH` - путь до обученного QNet checkpoint. Параметр обязателен.
 * `CRITIC_TOKENIZER_PATH` - tokenizer для critic. По умолчанию используется `MODEL_PATH`.
@@ -130,15 +138,13 @@ MAX_TASKS=2
 * `RUN_ID` - идентификатор запуска.
 * `OUT_DIR` - позволяет явно переопределить директорию с результатами.
 
-Сейчас QNet critic поддерживается только для ALFWorld.
-
 По умолчанию результаты сохраняются в:
 
 ```text
-outputs/qwen3_4b_alfworld_qnet_run<RUN_ID>/
+outputs/qwen3_4b_<benchmark>_qnet_run<RUN_ID>/
 ```
 
-Формат `trajectories.jsonl` совместим с обычными actor-only экспериментами. Дополнительно для каждого шага сохраняются все рассмотренные кандидаты, их Q-values, источник score и идентификатор выбранного critic'ом кандидата. Поэтому стандартный ALFWorld calculator можно использовать без изменений.
+Формат `trajectories.jsonl` совместим с обычными actor-only экспериментами. Дополнительно для каждого шага сохраняются все рассмотренные кандидаты, их Q-values, источник score и идентификатор выбранного critic'ом кандидата. Для итоговых benchmark-метрик используются соответствующие `calc_results_alfworld.py`, `calc_results_sciworld.py` или `calc_results_webshop.py`.
 
 
 
