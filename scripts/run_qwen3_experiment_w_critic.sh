@@ -20,6 +20,7 @@ PYTHON="${PYTHON:-python}"
 
 MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3-4B-Instruct-2507}"
 
+# ВАЖНО: критик должен дообучаться именно под выбарнный ваше бенчмарк
 CRITIC_MODEL_PATH="${CRITIC_MODEL_PATH:-}"
 CRITIC_TOKENIZER_PATH="${CRITIC_TOKENIZER_PATH:-${MODEL_PATH}}"
 

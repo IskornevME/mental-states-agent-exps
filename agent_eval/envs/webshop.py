@@ -1,18 +1,41 @@
-import copy
-import json
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 from agent_eval.envs.base import BaseEnv
-from agent_eval.envs.react import parse_react_action
+from agent_eval.envs.react import format_admissible_actions, parse_react_action
 from agent_eval.paths import REPO_ROOT
 from agent_eval.state import State
 from agent_eval.tasks.webshop import WebShopTask
 
 
-def _repo_path(path_value: str) -> Path:
-    path = Path(path_value)
-    return path if path.is_absolute() else REPO_ROOT / path
+WEBSHOP_REACT_TEMPLATE_NO_HIS = """
+You are an expert agent operating in the WebShop environment.
+Your task is to: {task_description}
+Your current observation is: {current_observation}
+Your admissible actions of the current situation are: [{admissible_actions}].
+
+You can use search[<keywords>] when search is available.
+For click actions, choose one of the listed click[...] actions.
+
+Now it's your turn to take an action.
+You should first reason step-by-step about the current situation. This reasoning process MUST be enclosed within <think> </think> tags.
+Once you've finished your reasoning, you should choose an action for the current step and present it within <action> </action> tags.
+"""
+
+
+WEBSHOP_REACT_TEMPLATE = """
+You are an expert agent operating in the WebShop environment. Your task is to: {task_description}
+Prior to this step, you have already taken {step_count} step(s). Below are the most recent {history_length} observations and the corresponding actions you took: {action_history}
+You are now at step {current_step} and your current observation is: {current_observation}
+Your admissible actions of the current situation are: [{admissible_actions}].
+
+You can use search[<keywords>] when search is available.
+For click actions, choose one of the listed click[...] actions.
+
+Now it's your turn to take an action.
+You should first reason step-by-step about the current situation. This reasoning process MUST be enclosed within <think> </think> tags.
+Once you've finished your reasoning, you should choose an action for the current step and present it within <action> </action> tags.
+"""
 
 
 class WebShopEnv(BaseEnv):
@@ -22,9 +45,6 @@ class WebShopEnv(BaseEnv):
         self,
         task: WebShopTask,
         env,
-        instruction_path: str,
-        icl_path: str,
-        num_icl_examples: int = 1,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -33,16 +53,10 @@ class WebShopEnv(BaseEnv):
         self.env = env
         self.session_id = task.session_id
 
-        self.num_icl_examples = max(int(num_icl_examples), 0)
-
-        with _repo_path(instruction_path).open(encoding="utf-8") as f:
-            self.instruction = f.read().strip()
-
-        with _repo_path(icl_path).open(encoding="utf-8") as f:
-            self.raw_icl = json.load(f)
-
         self.current_observation = ""
         self.current_task_text = ""
+
+        self.react_history: List[Tuple[str, str]] = []
 
     def get_task_text(self) -> str:
         return self.current_task_text
@@ -67,20 +81,64 @@ class WebShopEnv(BaseEnv):
         return actions
 
     def build_agent_messages(self) -> List[Dict[str, str]]:
-        """Return the same conversation structure used by QLASS."""
-        messages = copy.deepcopy(self.state.history)
+        """Build one self-contained WebShop ReAct prompt."""
+        history_length = max(int(self.history_length), 0)
 
-        # The released QLASS wrapper does NOT append a separate available
-        # actions block. Keep it optional for future experiments.
-        if self.include_admissible_actions and messages:
-            actions = self.get_admissible_commands()
+        admissible_text = format_admissible_actions(self.get_admissible_commands())
 
-            if actions and messages[-1]["role"] == "user":
-                messages[-1]["content"] += "\n\nAvailable Actions:\n" + "\n".join(actions)
+        if not self.react_history:
+            prompt = WEBSHOP_REACT_TEMPLATE_NO_HIS.format(
+                task_description=self.get_task_text(),
+                current_observation=self.get_current_observation(),
+                admissible_actions=admissible_text,
+            )
 
-        return messages
+        else:
+            recent_history = (
+                self.react_history[-history_length:]
+                if history_length > 0 else []
+            )
+
+            first_step = len(self.react_history) - len(recent_history) + 1
+
+            history_lines = []
+
+            for offset, (observation, action) in enumerate(recent_history):
+                step_num = first_step + offset
+
+                history_lines.append(
+                    f"[Observation {step_num}: '{observation}', "
+                    f"Action {step_num}: '{action}']"
+                )
+
+            prompt = WEBSHOP_REACT_TEMPLATE.format(
+                task_description=self.get_task_text(),
+                step_count=len(self.react_history),
+                history_length=len(recent_history),
+                action_history="\n".join(history_lines),
+                current_step=len(self.react_history) + 1,
+                current_observation=self.get_current_observation(),
+                admissible_actions=admissible_text,
+            )
+
+        # Keep the option configurable, although the reference WebShop setup now includes available actions by default.
+        if not self.include_admissible_actions:
+            admissible_line = (
+                "Your admissible actions of the current situation are: "
+                f"[{admissible_text}].\n"
+            )
+            prompt = prompt.replace(admissible_line, "")
+
+        return [
+            {
+                "role": "user",
+                "content": prompt.strip(),
+            }
+        ]
 
     def step(self, llm_output: str) -> Tuple[str, State]:
+        observation_before = self.get_current_observation()
+
         self.state.history.append(
             {
                 "role": "assistant",
@@ -106,6 +164,7 @@ class WebShopEnv(BaseEnv):
             )
 
             self.current_observation = observation
+            self.react_history.append((observation_before, "__invalid_action__"))
             self.state.steps += 1
             self.state.reward = 0.0
 
@@ -124,6 +183,8 @@ class WebShopEnv(BaseEnv):
             observation = "Invalid action!"
             reward = 0.0
             done = False
+
+        self.react_history.append((observation_before, action))
 
         self.current_observation = str(observation).strip()
 
@@ -159,6 +220,7 @@ class WebShopEnv(BaseEnv):
 
     def reset(self) -> Tuple[str, State]:
         self.state = State()
+        self.react_history = []
 
         # The QLASS task id is directly the WebShop session id.
         self.env.reset(self.session_id)
@@ -166,36 +228,5 @@ class WebShopEnv(BaseEnv):
         self.current_observation = str(self.env.observation).strip()
 
         self.current_task_text = str(self.env.instruction_text).strip()
-
-        # Reproduce QLASS prompt_with_icl(..., icl_format="conversation"):
-        #
-        # user:      instruction
-        # assistant: OK
-        # user:      ICL observation
-        # assistant: ICL response
-        # ...
-        # user:      current WebShop task
-        messages: List[Dict[str, str]] = [
-            {
-                "role": "user",
-                "content": self.instruction,
-            },
-            {
-                "role": "assistant",
-                "content": "OK",
-            },
-        ]
-
-        for example in self.raw_icl[: self.num_icl_examples]:
-            messages.extend(copy.deepcopy(example))
-
-        messages.append(
-            {
-                "role": "user",
-                "content": self.current_observation,
-            }
-        )
-
-        self.state.history = messages
 
         return self.current_observation, self.state
