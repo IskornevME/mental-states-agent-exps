@@ -54,7 +54,7 @@ MODEL_PATH=/home/m.iskornev/qlass/models/Qwen3-4B-Instruct-2507 BENCHMARK=alfwor
 
 ```text
 configs/agents/
-configs/critic/
+configs/critics/
 configs/envs/
 configs/experiments/
 ```
@@ -141,7 +141,7 @@ MAX_TASKS=2
 По умолчанию результаты сохраняются в:
 
 ```text
-outputs/qwen3_4b_alfworld_qnet_run<RUN_ID>/
+outputs/qwen3_4b_<benchmark>_qnet_run<RUN_ID>/
 ```
 
 Формат `trajectories.jsonl` совместим с обычными actor-only экспериментами. Дополнительно для каждого шага сохраняются все рассмотренные кандидаты, их Q-values, источник score и идентификатор выбранного critic'ом кандидата. Для итоговых benchmark-метрик используются соответствующие `calc_results_alfworld.py`, `calc_results_sciworld.py` или `calc_results_webshop.py`.
