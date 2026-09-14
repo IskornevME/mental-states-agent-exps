@@ -1,0 +1,15 @@
+name: qwen3_4b_webshop_qnet
+
+agent_config: configs/agents/qwen3_4b.yaml
+critic_config: configs/critics/qwen3_4b_webshop_qnet.yaml
+env_config: configs/envs/webshop.yaml
+
+output_dir: outputs/qwen3_4b_webshop_qnet
+
+max_tasks: null
+
+# Independent complete trajectories per task
+num_trajectories: 3
+
+# Actor candidates ranked by QNet at every step
+num_candidates: 2

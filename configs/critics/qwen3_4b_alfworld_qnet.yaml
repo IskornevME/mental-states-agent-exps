@@ -1,4 +1,5 @@
 type: qwen_qnet
+benchmark: alfworld
 
 # Overridden by the critic launcher.
 checkpoint_path: ""

@@ -1,0 +1,12 @@
+type: qwen_qnet
+benchmark: sciworld
+
+# Overridden by the critic launcher.
+checkpoint_path: ""
+tokenizer_path: ""
+
+# Must match critic training.
+max_prompt_tokens: 8192
+apply_sigmoid: false
+
+device: cuda

@@ -39,7 +39,7 @@ Once you've finished your reasoning, you should choose an action for the current
 
 
 class WebShopEnv(BaseEnv):
-    """WebShop wrapper preserving the QLASS interaction protocol."""
+    """WebShop wrapper using the shared single-message ReAct protocol."""
 
     def __init__(
         self,
