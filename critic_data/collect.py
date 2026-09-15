@@ -24,8 +24,11 @@ from agent_eval.envs.react import parse_react_action
 from agent_eval.paths import SCIENCEWORLD_JAR
 from agent_eval.tasks import AlfWorldTask, SciWorldTask, WebShopTask
 
-
 logger = logging.getLogger("critic_data")
+
+class InvalidExpertTrajectoryError(RuntimeError):
+    """Raised when an expert trajectory is not a successful terminal trajectory."""
+    pass
 
 
 # -----------------------------------------------------------------------------
@@ -660,15 +663,13 @@ def collect_expert_steps(
         logger.warning(
             "Expert actions ended before environment termination. "
             "expert_steps=%d env_steps=%d max_steps=%d "
-            "last_action=%r current_observation=%r admissible_actions=%r "
-            "fallback_reward=%s",
+            "last_action=%r current_observation=%r admissible_actions=%r",
             len(expert_steps),
             state.steps,
             env.max_steps,
             expert_steps[-1]["critic_action"] if expert_steps else None,
             env.get_current_observation(),
             env.get_admissible_commands(),
-            final_reward,
         )
 
     return (
@@ -939,6 +940,21 @@ def collect_task_tree(
         expert_record,
     )
 
+    # The expert trajectory is the anchor of the whole search procedure.
+    # If it does not reproduce a successful terminal solution in the current
+    # environment, do not spend compute exploring this task and do not include it in critic training data.
+    if not expert_finished or not expert_success:
+        if not expert_finished:
+            reason = "expert actions ended before environment termination"
+        else:
+            reason = "expert trajectory reached a terminal state without success"
+
+        raise InvalidExpertTrajectoryError(
+            f"{reason}; "
+            f"steps={len(expert_steps)}, "
+            f"reward={expert_reward}"
+        )
+
     root = make_node(
         critic_state=None,
         critic_action=None,
@@ -1191,6 +1207,7 @@ def main() -> None:
 
     processed_tasks = 0
     skipped_without_expert = 0
+    skipped_invalid_expert = 0
 
     progress_total = (
         min(n_tasks, args.max_tasks)
@@ -1237,15 +1254,26 @@ def main() -> None:
                     runtime=runtime,
                 )
 
-                root, expert_metadata = collect_task_tree(
-                    agent=agent,
-                    env=env,
-                    expert_record=expert_record,
-                    max_depth=args.max_depth,
-                    min_prune_depth=args.min_prune_depth,
-                    samples_per_depth=args.samples_per_depth,
-                    positive_reward_threshold=args.positive_reward_threshold,
-                )
+                try:
+                    root, expert_metadata = collect_task_tree(
+                        agent=agent,
+                        env=env,
+                        expert_record=expert_record,
+                        max_depth=args.max_depth,
+                        min_prune_depth=args.min_prune_depth,
+                        samples_per_depth=args.samples_per_depth,
+                        positive_reward_threshold=args.positive_reward_threshold,
+                    )
+
+                except InvalidExpertTrajectoryError as exc:
+                    skipped_invalid_expert += 1
+
+                    logger.warning(
+                        "Skipping task=%s because expert trajectory is invalid: %s",
+                        key, exc,
+                    )
+
+                    continue
 
                 record = {
                     "benchmark": benchmark,
@@ -1294,17 +1322,20 @@ def main() -> None:
 
     if processed_tasks == 0:
         raise RuntimeError(
-            "No task was collected. Check --split and expert trajectory "
-            "identifiers. "
-            f"Skipped without expert match: {skipped_without_expert}."
+            "No valid task was collected. "
+            f"Skipped without expert match: {skipped_without_expert}; "
+            f"skipped because expert trajectory was invalid: {skipped_invalid_expert}."
         )
 
     logger.info(
         "Finished worker %d: collected=%d "
-        "skipped_without_expert=%d output=%s",
+        "skipped_without_expert=%d "
+        "skipped_invalid_expert=%d "
+        "output=%s",
         args.worker_idx,
         processed_tasks,
         skipped_without_expert,
+        skipped_invalid_expert,
         output_path,
     )
 
