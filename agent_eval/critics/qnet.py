@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 from agent_eval.critics.base import BaseCritic
@@ -15,11 +15,18 @@ class QNet(nn.Module):
         self,
         config,
         apply_sigmoid: bool = False,
+        backbone: Optional[nn.Module] = None,
+        dtype: torch.dtype = torch.bfloat16,
     ) -> None:
         super().__init__()
 
-        # llama is part of the saved state_dict
-        self.llama = AutoModelForCausalLM.from_config(config).bfloat16()
+        # Keep the historical attribute name "llama" for checkpoint compatibility.
+        # It can contain any HuggingFace decoder-only AutoModelForCausalLM backbone.
+        self.llama = backbone if backbone is not None else AutoModelForCausalLM.from_config(config)
+        self.llama = self.llama.to(dtype=dtype)
+
+        # Expose the original backbone config so it can be saved together with QNet.
+        self.config = self.llama.config
 
         self.mlp = nn.Sequential(
             nn.Linear(config.hidden_size, 1024),
@@ -27,7 +34,7 @@ class QNet(nn.Module):
             nn.Linear(1024, 1024),
             nn.ReLU(),
             nn.Linear(1024, 1, bias=False),
-        ).bfloat16()
+        ).to(dtype=dtype)
 
         self.apply_sigmoid = bool(apply_sigmoid)
 
@@ -36,8 +43,7 @@ class QNet(nn.Module):
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
     ) -> torch.Tensor:
-        # QwenForCausalLM stores the decoder backbone in .model
-        base_model = getattr(self.llama, "model", self.llama)
+        base_model = self.llama.base_model
 
         outputs = base_model(
             input_ids=input_ids,
@@ -69,6 +75,38 @@ class QNet(nn.Module):
             q_values = torch.sigmoid(q_values)
 
         return q_values
+
+    @classmethod
+    def from_base_model(
+        cls,
+        model_name_or_path: str,
+        apply_sigmoid: bool = False,
+        dtype: torch.dtype = torch.bfloat16,
+        trust_remote_code: bool = False,
+        attn_implementation: Optional[str] = None,
+    ) -> "QNet":
+        """Initialize a new QNet from a pretrained causal-LM backbone."""
+
+        load_kwargs = {
+            "torch_dtype": dtype,
+            "low_cpu_mem_usage": True,
+            "trust_remote_code": trust_remote_code,
+        }
+
+        if attn_implementation:
+            load_kwargs["attn_implementation"] = attn_implementation
+
+        backbone = AutoModelForCausalLM.from_pretrained(
+            model_name_or_path,
+            **load_kwargs,
+        )
+
+        return cls(
+            config=backbone.config,
+            apply_sigmoid=apply_sigmoid,
+            backbone=backbone,
+            dtype=dtype,
+        )
 
     @classmethod
     def from_pretrained(

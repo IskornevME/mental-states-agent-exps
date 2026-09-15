@@ -33,7 +33,7 @@ MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3-4B-Instruct-2507}"
 
 # ВАЖНО: критик должен дообучаться именно под выбарнный ваше бенчмарк
 CRITIC_MODEL_PATH="${CRITIC_MODEL_PATH:-}"
-CRITIC_TOKENIZER_PATH="${CRITIC_TOKENIZER_PATH:-${MODEL_PATH}}"
+CRITIC_TOKENIZER_PATH="${CRITIC_TOKENIZER_PATH:-${CRITIC_MODEL_PATH}}"
 
 if [[ -z "${CRITIC_MODEL_PATH}" ]]; then
     echo "[ERROR] CRITIC_MODEL_PATH must point to a trained QNet checkpoint." >&2
