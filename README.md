@@ -104,6 +104,7 @@ Benchmark выбирается переменной BENCHMARK: alfworld, sciworl
 **Важно:** QNet critic является benchmark-specific. Для выбранной среды необходимо использовать critic, который был обучен именно на этом benchmark и на текущем ReAct-формате его state + action representation.
 
 Например, ALFWorld critic нельзя использовать для ScienceWorld или WebShop. Для ScienceWorld и WebShop необходимо отдельно обучить соответствующие Qwen QNet critics.
+Подробная инструкция по сбору critic-data находится в [`critic_data/README.md`](critic_data/README.md), а по обучению QNet critic - в [`critic_training/README.md`](critic_training/README.md).
 
 Текущий ALFWorld critic можно запустить, например, так:
 
@@ -129,7 +130,7 @@ MAX_TASKS=2
 * `BENCHMARK` — `alfworld`, `sciworld` или `webshop`.
 * `MODEL_PATH` - checkpoint или Hugging Face model ID actor-модели.
 * `CRITIC_MODEL_PATH` - путь до обученного QNet checkpoint. Параметр обязателен.
-* `CRITIC_TOKENIZER_PATH` - tokenizer для critic. По умолчанию используется `MODEL_PATH`.
+* `CRITIC_TOKENIZER_PATH` - tokenizer для critic. По умолчанию используется `CRITIC_MODEL_PATH`.
 * `SERVER_GPU` - GPU для SGLang actor server.
 * `CRITIC_GPU` - отдельная GPU для локального QNet critic.
 * `N_CANDIDATES` - количество actor-кандидатов, которые critic оценивает на каждом шаге. По умолчанию `2`.

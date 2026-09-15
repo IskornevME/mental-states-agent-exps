@@ -113,6 +113,7 @@ class QNet(nn.Module):
         cls,
         checkpoint_path: str,
         apply_sigmoid: bool = False,
+        trust_remote_code: bool = False,
     ) -> "QNet":
         checkpoint_dir = Path(checkpoint_path)
 
@@ -125,11 +126,16 @@ class QNet(nn.Module):
         if not state_dict_path.is_file():
             raise FileNotFoundError(f"QNet weights were not found: {state_dict_path}")
 
-        config = AutoConfig.from_pretrained(checkpoint_dir)
+        config = AutoConfig.from_pretrained(checkpoint_dir, trust_remote_code=trust_remote_code)
 
+        backbone = AutoModelForCausalLM.from_config(
+            config,
+            trust_remote_code=trust_remote_code,
+        )
         model = cls(
             config=config,
             apply_sigmoid=apply_sigmoid,
+            backbone=backbone,
         )
 
         state_dict = torch.load(
@@ -165,12 +171,15 @@ class QwenQNetCritic(BaseCritic):
         if self.device.type == "cuda" and not torch.cuda.is_available():
             raise RuntimeError("QNet critic requires CUDA, but CUDA is not available")
 
+        trust_remote_code = bool(config.get("trust_remote_code", False))
+
         self.tokenizer = AutoTokenizer.from_pretrained(
             tokenizer_path,
             model_max_length=self.max_prompt_tokens,
             padding_side="right",
             truncation_side="left",
             use_fast=False,
+            trust_remote_code=trust_remote_code,
         )
 
         if self.tokenizer.pad_token_id is None:
@@ -182,6 +191,7 @@ class QwenQNetCritic(BaseCritic):
         self.model = QNet.from_pretrained(
             checkpoint_path,
             apply_sigmoid=bool(config.get("apply_sigmoid", False)),
+            trust_remote_code=trust_remote_code,
         )
 
         self.model = self.model.to(self.device)
